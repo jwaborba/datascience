@@ -1,0 +1,247 @@
+V2
+
+install.packages('dplyr')
+install.packages('ggplot2')
+install.packages('countrycode')
+install.packages('corrplot')
+install.packages('rworldmap')
+library(dplyr)
+library(ggplot2)
+library(countrycode)
+library(corrplot)
+library(rworldmap)
+options(scipen = 999)
+
+
+
+###PREPARING DATA FOR EXPLORATION
+
+master <- read.csv('master.csv', header=T, sep=',', encoding = "UTF-8", stringsAsFactors = T)
+names(master) <- c('country', 'year', 'sex', 'age', 'suicides_no', 'population', 'suicides.100k.pop','country.year', 'HDI.for.year', 'year.gdp', 'gdp.per.capta', 'generation')
+master$HDI.for.year <- NULL
+master$country.year <- NULL
+master$year.gdp <- gsub(",","", master$year.gdp)
+master$year.gdp <- gsub("\\.", ",", master$year.gdp)
+master$year.gdp <- as.numeric(master$year.gdp)
+class(master$year.gdp)
+View(master)
+
+master$sex <- factor(master$sex,
+                     ordered = F)
+class(master$sex)
+
+master$age <- factor(master$age, 
+                     ordered = T, 
+                     levels = c("5-14 years",
+                                "15-24 years", 
+                                "25-34 years", 
+                                "35-54 years", 
+                                "55-74 years", 
+                                "75+ years"))
+
+class(master$age)
+
+master$generation <- factor(master$generation, 
+                            ordered = T, 
+                            levels = c("G.I. Generation", 
+                                       "Silent",
+                                       "Boomers", 
+                                       "Generation X", 
+                                       "Millenials", 
+                                       "Generation Z"))
+class(master$generation)
+
+master$sex <- factor(master$sex,
+                     ordered = F)
+
+class(master$sex)
+
+master$continent <- countrycode(sourcevar = master[, "country"],
+                                origin = "country.name",
+                                destination = "continent")
+master$continent <- factor(master$continent,
+                           ordered = F)
+
+class(master$continent)
+
+######ContinentData
+
+country$continent <- countrycode(sourcevar = country[, "country"],
+                                 origin = "country",
+                                 destination = "continent")
+
+###DATA EXPLORATION
+histograma <-
+  master %>% 
+  group_by(year) %>% 
+  summarise(suicides_no = sum(suicides_no))
+
+mean(histograma$suicides_no)
+sd(histograma$suicides_no)
+median(histograma$suicides_no)
+range(histograma$suicides_no)
+quantile(histograma$suicides_no)
+
+ggplot(histograma, aes(histograma$suicides_no))+
+  geom_histogram()+
+  labs(title = 'Observations distributions',
+       y = 'Count',
+       x = 'Volume')
+
+ggplot(histograma, aes(x=year, y=suicides_no))+
+  geom_boxplot(outlier.color = 'red', outlier.shape = 8)
+
+skewness(histograma$suicides_no)
+kurtosis(histograma$suicides_no)
+
+#Data Wranglin
+#PLOTS PARA ENTENDER O DADO
+
+###MAPDATA
+worldmap <-
+  master %>% 
+  group_by(country) %>% 
+  summarise(suicides.100k.pop=sum(as.numeric(suicides_no)) / sum(as.numeric(population)) * 100000)
+
+data <- joinCountryData2Map(worldmap, joinCode = 'NAME', nameJoinColumn = 'country')
+par(mar=c(0, 0, 0, 0))
+mapCountryData(data,
+               nameColumnToPlot = 'suicides.100k.pop',
+               mapTitle = '',
+               oceanCol="lightblue",
+               missingCountryCol = 'grey',
+               catMethod = 'pretty')
+
+master %>% 
+  group_by(year) %>%
+  filter(year != 2016) %>% 
+  summarise(suicides.per.100k=sum(suicides_no) / sum(population) * 100000) %>%
+  ggplot(aes(x=year, y=suicides.per.100k))+
+  geom_line()+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1985,2015,5))+
+  scale_y_continuous(breaks = seq(10,20,1))+
+  labs(title = 'Suicides per 100k',
+       subtitle = '1985 to 2015 timeline',
+       x = 'Year',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(year, sex) %>%
+  filter(year != 2016) %>% 
+  summarise(suicides.per.100k=sum(suicides_no) / sum(population) * 100000) %>%
+  ggplot(aes(x=year, y=suicides.per.100k, col = sex))+
+  geom_line()+
+  geom_point()+
+  scale_x_continuous(breaks = seq(1985,2015,5))+
+  scale_y_continuous(breaks = seq(10,20,1))+
+  labs(title = 'Suicides per 100k',
+       subtitle = '1985 to 2015 timeline',
+       x = 'Year',
+       y = 'Suicides per 100k')
+
+
+
+country <- master %>% 
+  group_by(country) %>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>%
+  arrange(desc(suicides_per_100k))
+
+country$country <- factor(country$country, 
+                          ordered = T, 
+                          levels = rev(country$country))
+
+ggplot(country, aes(x=country, y = suicides_per_100k, fill = suicides_per_100k))+
+  geom_bar(stat = 'identity') + coord_flip() +
+  labs(title = 'Suicides per 100k ',
+       subtitle = 'By country',
+       x = 'Country',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(year, age) %>% 
+  filter(year != 2016)%>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>% 
+  ggplot(aes(x= year, y=suicides_per_100k, fill = age))+
+  geom_bar(stat='identity', position='fill')+
+  labs(title='Sucides per 100k',
+       subtitle = 'Time series by age',
+       x = 'Year',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(year, age) %>% 
+  filter(year != 2016)%>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>% 
+  ggplot(aes(x= year, y=suicides_per_100k, fill = age))+
+  geom_bar(stat='identity', position='stack')+
+  labs(title='Sucides per 100k',
+       subtitle = 'Time series by age',
+       x = 'Year',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(continent, age, year) %>% 
+  filter(year != 2016)%>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>% 
+  ggplot(aes(x= continent, y=suicides_per_100k, fill = as.factor(year)))+
+  geom_bar(stat='identity', position=position_dodge())+
+  guides(fill=FALSE) +
+  labs(title='Sucides per 100k',
+       subtitle = 'Time series by continent',
+       x = 'Continent',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(continent, sex, year) %>% 
+  filter(year != 2016)%>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>% 
+  ggplot(aes(x= continent, y=suicides_per_100k, fill = sex))+
+  geom_bar(stat='identity', position=position_dodge())+
+  labs(title='Sucides per 100k',
+       subtitle = 'Time series by continent and sex',
+       x = 'Continent',
+       y = 'Suicides per 100k')
+
+master %>% 
+  group_by(continent, age, year) %>% 
+  filter(year != 2016)%>% 
+  summarise(suicides_per_100k=sum(suicides_no) / sum(population) * 100000) %>% 
+  ggplot(aes(x= continent, y=suicides_per_100k, fill = age))+
+  geom_bar(stat='identity', position=position_dodge())+
+  labs(title='Sucides per 100k',
+       subtitle = 'Time series by continent and age',
+       x = 'Continent',
+       y = 'Suicides per 100k')
+
+#############################
+##CORRELACOES
+
+correlacao <-
+  master %>% 
+  group_by(year) %>% 
+  summarise(suicides_no = sum(suicides_no),
+            suicides.100k.pop = sum(suicides_no) / sum(population) * 100000,
+            population = mean(population),
+            year.gdp = mean(year.gdp),
+            gdp.per.capta = mean(gdp.per.capta))
+correlacao$year <- NULL
+View(correlacao)
+
+modelo <- cor(correlacao)
+corrplot(modelo, method = 'color')
+corrplot(modelo, method = 'number' )
+
+ggplot(correlacao, aes(x=gdp.per.capta, y=suicides.100k.pop))+
+  geom_point(aes(size = year.gdp, col = population))+
+  geom_smooth(method = 'lm', se=T)
+
+ggplot(correlacao, aes(x=gdp.per.capta, y=suicides.100k.pop))+
+  geom_point(aes(size = year.gdp, col = population))+
+  geom_smooth(method = 'lm')+
+  labs(title = 'Linear Regression and Dispersion',
+       subtitle = 'Suicides per 100k and gdp per capta',
+       x = 'gdp per capta',
+       y = 'Suicides per 100k')
+
+

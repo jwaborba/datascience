@@ -1,0 +1,153 @@
+# Definition of the problem: Predict estudent's grades from several indicator
+# https://archive.ics.uci.edu/ml/datasets/Student+Performance
+
+estudantes <- read.csv2('estudantes.csv', sep = ",", stringsAsFactors = F, header = T )
+str(estudantes)
+View(estudantes)
+#exploratory analysis on target variable
+
+any(is.na(estudantes))
+
+boxplot(estudantes$G3, main = 'G3 ploted in boxplot')
+hist(estudantes$G3, main = 'Histrogram of Final Grades', xlab = 'G3', prob = T)
+lines(density(estudantes$G3), col = "red", lwd = 4)
+
+#No outliers
+#close to normal distribution
+
+#spliting into training and test datasets
+install.packages('caTools')
+library(caTools)
+training <- sample.split(estudantes, SplitRatio = 0.7)
+trainingdf <- subset(estudantes, training == T)
+testsdf <- subset(estudantes, training == F)
+View(trainingdf)
+View(testsdf)
+
+#choosing only numerical columns
+numericrule <- sapply(trainingdf, is.numeric)
+View(numericrule)
+
+#verifying correlations
+correlations <- cor(trainingdf[,numericrule])
+correlations
+library(corrplot)
+corrplot(correlations, method = 'color')
+library(psych)
+pairs.panels(correlations) #won't be using, too noisy
+
+#insights from correlations:
+#number of failures has a negative correlation to the grades
+#goout also has a negative correlation.
+#all variables less freetime and absenses have some sort of correlation to G3,
+#so we'll keep them all to the model
+
+#creating the model
+numericcol <- data.frame(trainingdf[,numericrule])
+View(numericcol)
+#using randomForest to undestand best variables to fit model
+install.packages('randomForest')
+library(randomForest)
+pre_model <- randomForest(G3~.,
+                          data = numericcol,
+                          ntree = 100, nodesize = 10,
+                          importance = TRUE)
+pre_model
+
+#ploting pre_model
+varImpPlot(pre_model)
+
+modelo = lm(G3~., numericcol)
+summary(modelo)
+
+#understanding the output of the model
+#- Only absebses and famrel have relevancy to the model. It was expected when we verified the correlations coefficients
+#- Residual standard errors are low, which is good
+#- R^2 is 0.8265 which is good
+
+#attempt 1 to improve model accuracy
+
+modelo2 <- lm(G3~ age + Medu+ Fedu+ traveltime+ studytime+ failures + famrel+
+                Walc+goout+freetime+Dalc+health+absences+G1*G2, data = numericcol)
+summary(modelo2)
+
+#Slightly improviment on R^2 0,8272
+
+#adding a new variable to try to increase model performance
+numericcol$G22 <- numericcol$G2 ^ 2
+View(numericcol)
+modelo3 <- lm(G3~ age + Medu+ Fedu+ traveltime+ studytime+ failures + famrel+
+                Walc+goout+freetime+Dalc+health+absences+G1*G2+G22, data = numericcol)
+summary(modelo3)
+
+#slightly  improvement R^2 0,8279 
+
+#adding a new variable to try to increase model performance
+numericcol$absences2 <- numericcol$absences ^ 2
+numericcol$age2 <- numericcol$age ^ 2
+View(numericcol)
+
+modelo4 <- lm(G3~ age + Medu+ Fedu+ traveltime+ studytime+ failures + famrel+
+                Walc+goout+freetime+Dalc+health+absences+G1*G2+G22+age2+absences2, data = numericcol)
+summary(modelo4)
+plot(modelo4)
+
+#R^2 0,8368
+
+#getting the residuals
+res <- data.frame(residuals(modelo4))
+class(res)
+hist(res$residuals.modelo4., main = 'Residuals of the Model', xlab = 'Residuals')
+View(res)
+
+#doing the prediction
+previsao <- predict(modelo4, numericcol)
+View(previsao)
+class(previsao)
+resultados <- cbind(previsao, numericcol$G3)
+resultados <- as.data.frame(resultados)
+resultados$res <- residuals(modelo4)
+resultados$previsao <- sapply(resultados$previsao, negativesrmv)
+View(resultados)
+class(resultados$previsao)
+
+#treating negative values (used above)
+negativesrmv <- function(x) {
+  if (x < 0) {
+    return(0)}
+  else{
+    return(x)}
+}
+
+#plot fitted values vs residuals
+resultados$absenses <- numericcol$absences2
+ggplot(resultados, aes(x = absenses, y = V2))+
+  geom_segment(aes(xend = absenses, yend = previsao))+
+  geom_point()+
+  geom_point(aes(y=previsao) shape = 1)
+  
+ggplot(resultados, aes(x = G2, y = V2)) +
+  geom_smooth(method = "lm", se = FALSE, color = "lightgrey") + 
+  geom_segment(aes(xend = G2, yend = previsao), alpha = .2) + 
+  geom_point() +
+  geom_point(aes(y = previsao), shape = 1) +
+  theme_bw()
+
+#Comparing the result of the model with the test dataset
+#ajusting the tests dataset
+testsdf$G22 <- testsdf$G2^2
+testsdf$age2 <- testsdf$age^2
+testsdf$absences2 <- testsdf$absences^2
+previsaotest <- predict(modelo4, testsdf)
+
+#comparison
+comparisontests <- cbind(previsaotest,testsdf$G3)
+comparisontests <- as.data.frame(comparisontests)
+comparisontests$previsaotest <- sapply(comparisontests$previsaotest, negativesrmv)
+View(comparisontests)
+comparisontests$dif <- comparisontests$V2 - comparisontests$previsaotest
+
+mean(comparisontests$dif)
+
+
+
